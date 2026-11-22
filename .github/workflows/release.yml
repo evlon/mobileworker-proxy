@@ -121,13 +121,19 @@ jobs:
       - name: 创建或更新 Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
           VERSION: ${{ needs.version.outputs.version }}
           PRERELEASE: ${{ needs.version.outputs.prerelease }}
         run: |
           set -euo pipefail
-          if gh release view "$VERSION" >/dev/null 2>&1; then
-            echo "Release $VERSION 已存在，改为覆盖上传资产"
+          if gh api "repos/$REPO/releases/tags/$VERSION" >/dev/null 2>&1; then
+            echo "Release $VERSION 已存在，覆盖上传资产"
             gh release upload "$VERSION" dist/* --clobber
+            # 用 API 而非 `gh release view` 判断存在性，草稿也能查到。
+            # 若它处于草稿状态（典型原因：标签被删掉又重建，GitHub 会把
+            # Release 转成草稿 —— 草稿对匿名访问就是 404），这里顺手发布出来，
+            # 否则会出现「工作流 success 但外面打不开」的静默故障。
+            gh release edit "$VERSION" --draft=false --title "$VERSION"
           else
             ARGS=(--title "$VERSION" --generate-notes)
             if [ "$PRERELEASE" = "true" ]; then ARGS+=(--prerelease); fi
